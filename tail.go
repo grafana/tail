@@ -143,7 +143,7 @@ func (tail *Tail) Tell() (offset int64, err error) {
 	if tail.file == nil {
 		return
 	}
-	offset, err = tail.file.Seek(0, os.SEEK_CUR)
+	offset, err = tail.file.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return
 	}
@@ -184,15 +184,17 @@ func (tail *Tail) closeFile() {
 	}
 }
 
-func (tail *Tail) reopen() error {
+func (tail *Tail) reopen(truncated bool) error {
 
 	// There are cases where the file is reopened so quickly it's still the same file
 	// which causes the poller to hang on an open file handle to a file no longer being written to
 	// and which eventually gets deleted.  Save the current file handle info to make sure we only
 	// start tailing a different file.
 	cf, err := tail.file.Stat()
-	if err != nil {
-		//Ignore the error, can't be the same file if we can't stat it, will check for nil below
+	if !truncated && err != nil {
+		log.Print("stat of old file returned, this is not expected and may result in unexpected behavior")
+		// We don't action on this error but are logging it, not expecting to see it happen and not sure if we
+		// need to action on it, cf is checked for nil later on to accommodate this
 	}
 
 	tail.closeFile()
@@ -213,7 +215,7 @@ func (tail *Tail) reopen() error {
 			return fmt.Errorf("Unable to open file %s: %s", tail.Filename, err)
 		}
 
-		// File exists and is opened, make sure it's not the exact same file as before.
+		// File exists and is opened, get information about it.
 		nf, err := tail.file.Stat()
 		if err != nil {
 			tail.Logger.Print("Failed to stat new file to be tailed, will try to open it again")
@@ -221,8 +223,13 @@ func (tail *Tail) reopen() error {
 			continue
 		}
 
-		if cf != nil && os.SameFile(cf, nf) {
-			// Trying to reopen and tail the exact same file, just wait a bit and try again.
+		// Check to see if we are trying to reopen and tail the exact same file (and it was not truncated).
+		retries := 20
+		if !truncated && cf != nil && os.SameFile(cf, nf) {
+			retries--
+			if retries <= 0 {
+				return errors.New("gave up trying to reopen log file with a different handle")
+			}
 			select {
 			case <-time.After(watch.POLL_DURATION):
 				tail.closeFile()
@@ -257,8 +264,8 @@ func (tail *Tail) tailFileSync() {
 	defer tail.close()
 
 	if !tail.MustExist {
-		// deferred first open.
-		err := tail.reopen()
+		// deferred first open, not technically truncated but we don't need to check for changed files
+		err := tail.reopen(true)
 		if err != nil {
 			if err != tomb.ErrDying {
 				tail.Kill(err)
@@ -365,7 +372,7 @@ func (tail *Tail) tailFileSync() {
 // reopened if ReOpen is true. Truncated files are always reopened.
 func (tail *Tail) waitForChanges() error {
 	if tail.changes == nil {
-		pos, err := tail.file.Seek(0, os.SEEK_CUR)
+		pos, err := tail.file.Seek(0, io.SeekCurrent)
 		if err != nil {
 			return err
 		}
@@ -383,7 +390,7 @@ func (tail *Tail) waitForChanges() error {
 		if tail.ReOpen {
 			// XXX: we must not log from a library.
 			tail.Logger.Printf("Re-opening moved/deleted file %s ...", tail.Filename)
-			if err := tail.reopen(); err != nil {
+			if err := tail.reopen(false); err != nil {
 				return err
 			}
 			tail.Logger.Printf("Successfully reopened %s", tail.Filename)
@@ -396,7 +403,7 @@ func (tail *Tail) waitForChanges() error {
 	case <-tail.changes.Truncated:
 		// Always reopen truncated files (Follow is true)
 		tail.Logger.Printf("Re-opening truncated file %s ...", tail.Filename)
-		if err := tail.reopen(); err != nil {
+		if err := tail.reopen(true); err != nil {
 			return err
 		}
 		tail.Logger.Printf("Successfully reopened truncated %s", tail.Filename)
