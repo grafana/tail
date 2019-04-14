@@ -185,6 +185,16 @@ func (tail *Tail) closeFile() {
 }
 
 func (tail *Tail) reopen() error {
+
+	// There are cases where the file is reopened so quickly it's still the same file
+	// which causes the poller to hang on an open file handle to a file no longer being written to
+	// and which eventually gets deleted.  Save the current file handle info to make sure we only
+	// start tailing a different file.
+	cf, err := tail.file.Stat()
+	if err != nil {
+		//Ignore the error, can't be the same file if we can't stat it, will check for nil below
+	}
+
 	tail.closeFile()
 	for {
 		var err error
@@ -201,6 +211,25 @@ func (tail *Tail) reopen() error {
 				continue
 			}
 			return fmt.Errorf("Unable to open file %s: %s", tail.Filename, err)
+		}
+
+		// File exists and is opened, make sure it's not the exact same file as before.
+		nf, err := tail.file.Stat()
+		if err != nil {
+			tail.Logger.Print("Failed to stat new file to be tailed, will try to open it again")
+			tail.closeFile()
+			continue
+		}
+
+		if cf != nil && os.SameFile(cf, nf) {
+			// Trying to reopen and tail the exact same file, just wait a bit and try again.
+			select {
+			case <-time.After(watch.POLL_DURATION):
+				tail.closeFile()
+				continue
+			case <-tail.Tomb.Dying():
+				return tomb.ErrDying
+			}
 		}
 		break
 	}
