@@ -435,6 +435,66 @@ func reSeek(t *testing.T, poll bool) {
 	tailTest.Cleanup(tail, false)
 }
 
+func TestTellRace(t *testing.T) {
+	tailTest := NewTailTest("tell-race", t)
+	tailTest.CreateFile("test.txt", "hello\nworld\n")
+
+	tail := tailTest.StartTail("test.txt", Config{Follow: true, ReOpen: true, Poll: true})
+
+	<-tail.Lines
+	<-tail.Lines
+
+	_, err := tail.Tell()
+	if err != nil {
+		t.Fatal("unexpected error", err)
+	}
+
+	tailTest.TruncateFile("test.txt", "yay\nyay2\n")
+
+	// wait for reopen to happen
+	time.Sleep(100 * time.Millisecond)
+
+	_, err = tail.Tell()
+	if err != nil {
+		t.Fatal("unexpected error", err)
+	}
+
+	close(tailTest.done)
+	tailTest.Cleanup(tail, false)
+}
+
+func TestSizeRace(t *testing.T) {
+	tailTest := NewTailTest("tell-race", t)
+	tailTest.CreateFile("test.txt", "hello\nworld\n")
+
+	tail := tailTest.StartTail("test.txt", Config{Follow: true, ReOpen: true, Poll: true})
+
+	<-tail.Lines
+	<-tail.Lines
+
+	s1, err := tail.Size()
+	if err != nil {
+		t.Fatal("unexpected error", err)
+	}
+
+	tailTest.TruncateFile("test.txt", "yay\nyay2\n") // smaller than before
+
+	// wait for reopen to happen
+	time.Sleep(100 * time.Millisecond)
+
+	s2, err := tail.Size()
+	if err != nil {
+		t.Fatal("unexpected error", err)
+	}
+
+	if s2 == 0 || s2 > s1 {
+		t.Fatal("expected 0 < s2 < s1! s1:", s1, "s2:", s2)
+	}
+
+	close(tailTest.done)
+	tailTest.Cleanup(tail, false)
+}
+
 // Test library
 
 type TailTest struct {
