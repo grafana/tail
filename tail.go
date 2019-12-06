@@ -86,7 +86,8 @@ type Tail struct {
 
 	tomb.Tomb // provides: Done, Kill, Dying
 
-	lk sync.Mutex
+	fileMtx sync.Mutex
+	lk      sync.Mutex
 }
 
 var (
@@ -140,6 +141,8 @@ func TailFile(filename string, config Config) (*Tail, error) {
 // it may readed one line in the chan(tail.Lines),
 // so it may lost one line.
 func (tail *Tail) Tell() (offset int64, err error) {
+	tail.fileMtx.Lock()
+	defer tail.fileMtx.Unlock()
 	if tail.file == nil {
 		return
 	}
@@ -211,7 +214,9 @@ func (tail *Tail) reopen(truncated bool) error {
 	tail.closeFile()
 	for {
 		var err error
+		tail.fileMtx.Lock()
 		tail.file, err = OpenFile(tail.Filename)
+		tail.fileMtx.Unlock()
 		if err != nil {
 			if os.IsNotExist(err) {
 				tail.Logger.Printf("Waiting for %s to appear...", tail.Filename)
