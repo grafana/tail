@@ -142,11 +142,12 @@ func TailFile(filename string, config Config) (*Tail, error) {
 // so it may lost one line.
 func (tail *Tail) Tell() (offset int64, err error) {
 	tail.fileMtx.Lock()
-	defer tail.fileMtx.Unlock()
-	if tail.file == nil {
+	f := tail.file
+	tail.fileMtx.Unlock()
+	if f == nil {
 		return
 	}
-	offset, err = tail.file.Seek(0, io.SeekCurrent)
+	offset, err = f.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return
 	}
@@ -165,11 +166,12 @@ func (tail *Tail) Tell() (offset int64, err error) {
 // or 0 with an error if there was an error Stat'ing the file.
 func (tail *Tail) Size() (int64, error) {
 	tail.fileMtx.Lock()
-	defer tail.fileMtx.Unlock()
-	if tail.file == nil {
+	f := tail.file
+	tail.fileMtx.Unlock()
+	if f == nil {
 		return 0, nil
 	}
-	fi, err := tail.file.Stat()
+	fi, err := f.Stat()
 	if err != nil {
 		return 0, err
 	}
