@@ -140,26 +140,26 @@ func TailFile(filename string, config Config) (*Tail, error) {
 // But this value is not very accurate.
 // it may readed one line in the chan(tail.Lines),
 // so it may lost one line.
-func (tail *Tail) Tell() (offset int64, err error) {
+func (tail *Tail) Tell() (int64, error) {
 	tail.fileMtx.Lock()
 	f := tail.file
 	tail.fileMtx.Unlock()
 	if f == nil {
-		return
+		return 0, os.ErrNotExist
 	}
-	offset, err = f.Seek(0, io.SeekCurrent)
+	offset, err := f.Seek(0, io.SeekCurrent)
 	if err != nil {
-		return
+		return 0, err
 	}
 
 	tail.lk.Lock()
 	defer tail.lk.Unlock()
 	if tail.reader == nil {
-		return
+		return 0, nil
 	}
 
 	offset -= int64(tail.reader.Buffered())
-	return
+	return offset, nil
 }
 
 // Size returns the length in bytes of the file being tailed,
@@ -169,7 +169,7 @@ func (tail *Tail) Size() (int64, error) {
 	f := tail.file
 	tail.fileMtx.Unlock()
 	if f == nil {
-		return 0, nil
+		return 0, os.ErrNotExist
 	}
 	fi, err := f.Stat()
 	if err != nil {
