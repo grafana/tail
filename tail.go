@@ -65,8 +65,9 @@ type Config struct {
 	RateLimiter *ratelimiter.LeakyBucket
 
 	// Generic IO
-	Follow      bool // Continue looking for new lines (tail -f)
-	MaxLineSize int  // If non-zero, split longer lines into multiple lines
+	Follow      bool          // Continue looking for new lines (tail -f)
+	MaxLineSize int           // If non-zero, split longer lines into multiple lines
+	MaxEOFWait  time.Duration // Max time to wait at EOF before closing the file
 
 	// Logger, when nil, is set to tail.DefaultLogger
 	// To disable logging: set field to tail.DiscardingLogger
@@ -314,6 +315,7 @@ func (tail *Tail) tailFileSync() {
 	var offset int64
 	var err error
 	oneMoreRun := false
+	lastChanged := time.Now()
 
 	// Read line by line.
 	for {
@@ -332,6 +334,7 @@ func (tail *Tail) tailFileSync() {
 		// Process `line` even if err is EOF.
 		if err == nil {
 			cooloff := !tail.sendLine(line)
+			lastChanged = time.Now()
 			if cooloff {
 				// Wait a second before seeking till the end of
 				// file when rate limit is reached.
@@ -369,26 +372,37 @@ func (tail *Tail) tailFileSync() {
 			// oneMoreRun is set true when a file is deleted,
 			// this is to catch events which might get missed in polling mode.
 			// now that the last run is completed, finish deleting the file
+			// we keep trying to read from the file for a time to prevent
+			// closing the file too early when hitting EOF multiple times
+			// as data is flushed to to disk in chunks (for network mounted
+			// disks it may mean latency causes the chunks to arrive a bit late).
 			if oneMoreRun {
-				oneMoreRun = false
-				err = tail.finishDelete()
-				if err != nil {
-					if err != ErrStop {
-						tail.Kill(err)
+				if time.Since(lastChanged) > tail.MaxEOFWait {
+					oneMoreRun = false
+					err = tail.finishDelete()
+					if err != nil {
+						if err != ErrStop {
+							tail.Kill(err)
+						}
+						return
 					}
-					return
+				} else {
+					time.Sleep(watch.POLL_DURATION)
 				}
 			}
 
 			// When EOF is reached, wait for more data to become
 			// available. Wait strategy is based on the `tail.watcher`
 			// implementation (inotify or polling).
-			oneMoreRun, err = tail.waitForChanges()
-			if err != nil {
-				if err != ErrStop {
-					tail.Kill(err)
+			if !oneMoreRun {
+				oneMoreRun, err = tail.waitForChanges()
+				if err != nil {
+					if err != ErrStop {
+						tail.Kill(err)
+					}
+					return
 				}
-				return
+				lastChanged = time.Now()
 			}
 		} else {
 			// non-EOF error
