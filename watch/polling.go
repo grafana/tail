@@ -4,22 +4,22 @@
 package watch
 
 import (
+	"github.com/hpcloud/tail/util"
+	"gopkg.in/tomb.v1"
 	"os"
 	"runtime"
 	"time"
-
-	"github.com/hpcloud/tail/util"
-	"gopkg.in/tomb.v1"
 )
 
 // PollingFileWatcher polls the file for changes.
 type PollingFileWatcher struct {
+	File     *os.File
 	Filename string
 	Size     int64
 }
 
 func NewPollingFileWatcher(filename string) *PollingFileWatcher {
-	fw := &PollingFileWatcher{filename, 0}
+	fw := &PollingFileWatcher{nil, filename, 0}
 	return fw
 }
 
@@ -66,6 +66,16 @@ func (fw *PollingFileWatcher) ChangeEvents(t *tomb.Tomb, pos int64) (*FileChange
 			}
 
 			time.Sleep(POLL_DURATION)
+			isDeleted, err := IsDeletePending(fw.File)
+			if err != nil {
+				util.Fatal("Failed to stat file %v: %v", fw.Filename, err)
+			}
+
+			if isDeleted {
+				changes.NotifyDeleted()
+				return
+			}
+
 			fi, err := os.Stat(fw.Filename)
 			if err != nil {
 				// Windows cannot delete a file if a handle is still open (tail keeps one open)
@@ -111,6 +121,10 @@ func (fw *PollingFileWatcher) ChangeEvents(t *tomb.Tomb, pos int64) (*FileChange
 	}()
 
 	return changes, nil
+}
+
+func (fw *PollingFileWatcher) SetFile(f *os.File) {
+	fw.File = f
 }
 
 func init() {
