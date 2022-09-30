@@ -66,12 +66,16 @@ func (fw *PollingFileWatcher) ChangeEvents(t *tomb.Tomb, pos int64) (*FileChange
 			}
 
 			time.Sleep(POLL_DURATION)
-			isDeleted, err := IsDeletePending(fw.File)
+			deletePending, err := IsDeletePending(fw.File)
 			if err != nil {
-				util.Fatal("Failed to stat file %v: %v", fw.Filename, err)
+				util.Fatal("Failed to get file info %v: %v", fw.Filename, err)
 			}
 
-			if isDeleted {
+			// DeletePending is a windows state where the file has been queued
+			// for delete but won't actually get deleted until all handles are
+			// closed. It's a variation on line 87 below
+			if deletePending {
+				fw.closeFile()
 				changes.NotifyDeleted()
 				return
 			}
@@ -125,6 +129,12 @@ func (fw *PollingFileWatcher) ChangeEvents(t *tomb.Tomb, pos int64) (*FileChange
 
 func (fw *PollingFileWatcher) SetFile(f *os.File) {
 	fw.File = f
+}
+
+func (fw *PollingFileWatcher) closeFile() {
+	if fw.File != nil {
+		_ = fw.File.Close() // Best effort close
+	}
 }
 
 func init() {
