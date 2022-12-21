@@ -222,6 +222,7 @@ func (tail *Tail) reopen(truncated bool) error {
 	}
 
 	tail.closeFile()
+	retries := 20
 	for {
 		var err error
 		tail.fileMtx.Lock()
@@ -251,7 +252,6 @@ func (tail *Tail) reopen(truncated bool) error {
 		}
 
 		// Check to see if we are trying to reopen and tail the exact same file (and it was not truncated).
-		retries := 20
 		if !truncated && cf != nil && os.SameFile(cf, nf) {
 			retries--
 			if retries <= 0 {
