@@ -18,19 +18,19 @@ import (
 	"github.com/grafana/tail/watch"
 )
 
+var testPollingOptions = watch.PollingFileWatcherOptions{
+	// Use a smaller poll duration for faster test runs. Keep it below
+	// 100ms (which value is used as common delays for tests)
+	MinPollFrequency: 5 * time.Millisecond,
+	MaxPollFrequency: 5 * time.Millisecond,
+}
+
 func init() {
 	// Clear the temporary test directory
 	err := os.RemoveAll(".test")
 	if err != nil {
 		panic(err)
 	}
-}
-
-func TestMain(m *testing.M) {
-	// Use a smaller poll duration for faster test runs. Keep it below
-	// 100ms (which value is used as common delays for tests)
-	watch.POLL_DURATION = 5 * time.Millisecond
-	os.Exit(m.Run())
 }
 
 func TestMustExist(t *testing.T) {
@@ -341,7 +341,7 @@ func reOpen(t *testing.T, poll bool) {
 	tailTest.CreateFile("test.txt", "hello\nworld\n")
 	tail := tailTest.StartTail(
 		"test.txt",
-		Config{Follow: true, ReOpen: true, Poll: poll})
+		Config{Follow: true, ReOpen: true, Poll: poll, PollOptions: testPollingOptions})
 	content := []string{"hello", "world", "more", "data", "endofworld"}
 	go tailTest.VerifyTailOutput(tail, content, false)
 
@@ -415,7 +415,7 @@ func reSeek(t *testing.T, poll bool) {
 	tailTest.CreateFile("test.txt", "a really long string goes here\nhello\nworld\n")
 	tail := tailTest.StartTail(
 		"test.txt",
-		Config{Follow: true, ReOpen: false, Poll: poll})
+		Config{Follow: true, ReOpen: false, Poll: poll, PollOptions: testPollingOptions})
 
 	go tailTest.VerifyTailOutput(tail, []string{
 		"a really long string goes here", "hello", "world", "h311o", "w0r1d", "endofworld"}, false)
@@ -439,7 +439,7 @@ func TestTellRace(t *testing.T) {
 	tailTest := NewTailTest("tell-race", t)
 	tailTest.CreateFile("test.txt", "hello\nworld\n")
 
-	tail := tailTest.StartTail("test.txt", Config{Follow: true, ReOpen: true, Poll: true})
+	tail := tailTest.StartTail("test.txt", Config{Follow: true, ReOpen: true, Poll: true, PollOptions: testPollingOptions})
 
 	<-tail.Lines
 	<-tail.Lines
@@ -467,7 +467,7 @@ func TestSizeRace(t *testing.T) {
 	tailTest := NewTailTest("tell-race", t)
 	tailTest.CreateFile("test.txt", "hello\nworld\n")
 
-	tail := tailTest.StartTail("test.txt", Config{Follow: true, ReOpen: true, Poll: true})
+	tail := tailTest.StartTail("test.txt", Config{Follow: true, ReOpen: true, Poll: true, PollOptions: testPollingOptions})
 
 	<-tail.Lines
 	<-tail.Lines
