@@ -263,13 +263,8 @@ func (tail *Tail) reopen(truncated bool) error {
 				return errors.New("gave up trying to reopen log file with a different handle")
 			}
 
-			waitTime := tail.PollOptions.MinPollFrequency
-			if waitTime == 0 {
-				waitTime = watch.DefaultPollingFileWatcherOptions.MinPollFrequency
-			}
-
 			select {
-			case <-time.After(waitTime): // TODO: should this use backoff as well?
+			case <-time.After(watch.DefaultPollingFileWatcherOptions.MaxPollFrequency):
 				tail.closeFile()
 				continue
 			case <-tail.Tomb.Dying():
