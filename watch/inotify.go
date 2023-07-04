@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 
 	"github.com/grafana/tail/util"
+	"github.com/fsnotify/fsnotify"
 
-	"gopkg.in/fsnotify/fsnotify.v1"
 	"gopkg.in/tomb.v1"
 )
 
