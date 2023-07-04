@@ -1,4 +1,4 @@
-// +build linux darwin freebsd netbsd openbsd
+// +build illumos linux darwin freebsd netbsd openbsd
 
 package tail
 

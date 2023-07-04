@@ -1,5 +1,5 @@
-//go:build linux || darwin || freebsd || netbsd || openbsd
-// +build linux darwin freebsd netbsd openbsd
+//go:build illumos || linux || darwin || freebsd || netbsd || openbsd
+// +build illumos linux darwin freebsd netbsd openbsd
 
 package watch
 
